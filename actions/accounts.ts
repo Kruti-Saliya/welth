@@ -1,7 +1,7 @@
 "use server"
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { Account } from "@prisma/client";
+import { Account, Transaction } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { revalidatePath } from "next/cache";
 
@@ -25,6 +25,51 @@ const serializeTransaction = (account: Account): ISerializedAccount => {
 
   return serializedAccount;
 };
+
+const serializeTransactionData = (transaction: Transaction) => {
+  return {
+    ...transaction,
+    amount:
+      transaction.amount instanceof Decimal
+        ? transaction.amount.toNumber()
+        : Number(transaction.amount),
+  };
+};
+
+export async function getAccountWithTransactions(accountId:string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const user = await db.user.findUnique({
+    where: { clerkUserId: userId },
+  });
+
+  if (!user) throw new Error("User not found");
+
+  const account = await db.account.findUnique({
+    where: {
+      id: accountId,
+      userId: user.id,
+    },
+    include: {
+      transactions: {
+        orderBy: { date: "desc" },
+      },
+      _count: {
+        select: { transactions: true },
+      },
+    },
+  });
+
+  if (!account) return null;
+
+  return {
+    ...serializeTransaction(account),
+    transactions: account.transactions.map(serializeTransactionData),
+    _count: account._count, 
+  };
+}
+
 
 export async function updateDefaultAccount(accountId:string) {
     try {
