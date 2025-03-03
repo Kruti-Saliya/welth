@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ReactNode, useState } from "react";
+import React, { ReactNode, useEffect, useState } from "react";
 import {
   Drawer,
   DrawerClose,
@@ -24,7 +24,10 @@ import {
 } from "./ui/select";
 import { Switch } from "./ui/switch";
 import { Button } from "./ui/button";
-
+import useFetch from "../hooks/use-fetch";
+import { createAccount } from "@/actions/dashboard";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 // Infer TypeScript type from Zod schema
 type TAccountFormValues = z.infer<typeof accountSchema>;
 
@@ -40,7 +43,7 @@ const CreateAccountDrawer: React.FC<TCreateAccountDrawerProps> = ({
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors },
     setValue,
     watch,
     reset,
@@ -55,11 +58,25 @@ const CreateAccountDrawer: React.FC<TCreateAccountDrawerProps> = ({
     },
   });
 
+  const {data:newAccount, error, fn:createAccountFn, loading: createAccountLoading} = useFetch(createAccount);
+
   const onSubmit = async (data: TAccountFormValues) => {
-    console.log("Form submitted:", data);
-    reset();
-    setOpen(false);
+    await createAccountFn(data)
   };
+
+  useEffect(() => {
+    if (newAccount) {
+      toast.success("Account created successfully");
+      reset();
+      setOpen(false);
+    }
+  }, [newAccount, reset]);
+
+  useEffect(() => {
+    if (error) {
+      toast.error("Failed to create account");
+    }
+  }, [error]);
 
   return (
     <Drawer open={open} onOpenChange={setOpen}>
@@ -150,8 +167,15 @@ const CreateAccountDrawer: React.FC<TCreateAccountDrawerProps> = ({
                   Cancel
                 </Button>
               </DrawerClose>
-              <Button type="submit" className="flex-1" disabled={isSubmitting}>
-                Create Account
+              <Button type="submit" className="flex-1" disabled={!!createAccountLoading}>
+              {createAccountLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create Account"
+                )}
               </Button>
             </div>
           </form>
