@@ -1,23 +1,25 @@
-import { currentUser } from "@clerk/nextjs/server"
+import { currentUser } from "@clerk/nextjs/server";
 import { db } from "./prisma";
 
-export const checkUser = async() => {
+export const checkUser = async () => {
     const user = await currentUser();
 
-    if(!user) {
+    if (!user) {
         return null;
     }
 
-    try{
+    try {
         const loggedInUser = await db.user.findUnique({
-            where:{
+            where: {
                 clerkUserId: user.id,
             }
-        })
-        if(loggedInUser) {
+        });
+
+        if (loggedInUser) {
             return loggedInUser;
         }
-        const name = `${user.firstName} ${user.lastName}`
+
+        const name = `${user.firstName} ${user.lastName}`;
         const newUser = await db.user.create({
             data: {
                 clerkUserId: user.id,
@@ -26,8 +28,11 @@ export const checkUser = async() => {
                 email: user.emailAddresses[0].emailAddress,
             }
         });
+
         return newUser;
-    }catch(error){
-        console.log(error);
+    } catch (error) {
+        if (error instanceof Error) {
+            console.log(error.message);
+        } 
     }
-}
+};
