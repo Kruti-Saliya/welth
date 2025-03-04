@@ -10,6 +10,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -33,9 +41,12 @@ import {
   Clock,
   MoreHorizontal,
   RefreshCw,
+  Search,
+  Trash,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 
 export type Transaction = {
   id: string;
@@ -48,7 +59,7 @@ export type Transaction = {
   isRecurring: boolean;
   recurringInterval?: keyof typeof RECURRING_INTERVALS;
   nextRecurringDate: string | Date;
-}
+};
 
 type TransactionTableProps = {
   transactions: Transaction[];
@@ -69,8 +80,58 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     field: "date",
     direction: "desc",
   });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [recurringFilter, setRecurringFilter] = useState("");
   const router = useRouter();
-  const filteredAndSortedTransactions = transactions;
+  // Memoized filtered and sorted transactions
+  const filteredAndSortedTransactions = useMemo(() => {
+    let result = [...transactions];
+
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      result = result.filter((transaction) =>
+        transaction.description?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Apply type filter
+    if (typeFilter) {
+      result = result.filter((transaction) => transaction.type === typeFilter);
+    }
+
+    // Apply recurring filter
+    if (recurringFilter) {
+      result = result.filter((transaction) => {
+        if (recurringFilter === "recurring") return transaction.isRecurring;
+        return !transaction.isRecurring;
+      });
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortConfig.field) {
+        case "date":
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case "amount":
+          comparison = a.amount - b.amount;
+          break;
+        case "category":
+          comparison = a.category.localeCompare(b.category);
+          break;
+        default:
+          comparison = 0;
+      }
+
+      return sortConfig.direction === "asc" ? comparison : -comparison;
+    });
+
+    return result;
+  }, [transactions, searchTerm, typeFilter, recurringFilter, sortConfig]);
 
   const handleSort = (field: keyof Transaction) => {
     setSortConfig((current) => ({
@@ -82,10 +143,12 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
 
   const handleSelect = (id: string) => {
     setSelectedIds((current: string[]) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
     );
   };
-  
+
   const handleSelectAll = () => {
     setSelectedIds((current) =>
       current.length === filteredAndSortedTransactions.length
@@ -93,16 +156,109 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
         : filteredAndSortedTransactions.map((t) => t.id)
     );
   };
-  
+
+  const handleBulkDelete = async () => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedIds.length} transactions?`
+      )
+    )
+      return;
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm("");
+    setTypeFilter("");
+    setRecurringFilter("");
+  };
   return (
     <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search transactions..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+            }}
+            className="pl-8"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Select
+            value={typeFilter}
+            onValueChange={(value) => {
+              setTypeFilter(value);
+            }}
+          >
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="All Types" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="INCOME">Income</SelectItem>
+              <SelectItem value="EXPENSE">Expense</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={recurringFilter}
+            onValueChange={(value) => {
+              setRecurringFilter(value);
+            }}
+          >
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="All Transactions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recurring">Recurring Only</SelectItem>
+              <SelectItem value="non-recurring">Non-recurring Only</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Bulk Actions */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleBulkDelete}
+              >
+                <Trash className="h-4 w-4 mr-2" />
+                Delete Selected ({selectedIds.length})
+              </Button>
+            </div>
+          )}
+
+          {(searchTerm || typeFilter || recurringFilter) && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleClearFilters}
+              title="Clear filters"
+            >
+              <X className="h-4 w-5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
       <div className="rounded-md border">
         <Table>
           <TableCaption>A list of your recent invoices.</TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead className="w-[50px]">
-                <Checkbox className="cursor-pointer" onCheckedChange={handleSelectAll} checked={selectedIds.length === filteredAndSortedTransactions.length && filteredAndSortedTransactions.length>0}/>
+                <Checkbox
+                  className="cursor-pointer"
+                  onCheckedChange={handleSelectAll}
+                  checked={
+                    selectedIds.length ===
+                      filteredAndSortedTransactions.length &&
+                    filteredAndSortedTransactions.length > 0
+                  }
+                />
               </TableHead>
               <TableHead
                 className="cursor-pointer"
@@ -131,7 +287,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     ) : (
                       <ChevronDown className="ml-1 h-4 w-4" />
                     ))}
-                  </div>
+                </div>
               </TableHead>
               <TableHead
                 className="cursor-pointer"
@@ -145,7 +301,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                     ) : (
                       <ChevronDown className="ml-1 h-4 w-4" />
                     ))}
-                  </div>
+                </div>
               </TableHead>
               <TableHead>Recurring</TableHead>
               <TableHead className="w-[50px]" />
@@ -165,7 +321,11 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
               filteredAndSortedTransactions.map((transaction) => (
                 <TableRow key={transaction.id}>
                   <TableCell>
-                    <Checkbox className="cursor-pointer" onCheckedChange={()=> handleSelect(transaction.id)} checked={selectedIds.includes(transaction.id)}/>
+                    <Checkbox
+                      className="cursor-pointer"
+                      onCheckedChange={() => handleSelect(transaction.id)}
+                      checked={selectedIds.includes(transaction.id)}
+                    />
                   </TableCell>
                   <TableCell>
                     {format(new Date(transaction.date), "PP")}
