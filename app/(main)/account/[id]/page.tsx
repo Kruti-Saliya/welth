@@ -1,17 +1,45 @@
 import { getAccountWithTransactions } from "@/actions/accounts";
 import { notFound } from "next/navigation";
-import React from "react";
+import React, { Suspense } from "react";
+import TransactionTable, { Transaction } from "../_components/TransactionTable";
+import { BarLoader } from "react-spinners";
+type TAccount = {
+  id: string;
+  name: string;
+  type: string;
+  balance: number;
+  _count: {
+    transactions: number;
+  };
+}
 
-type TAccountsPageProps = {
-  params: { id: string };
-};
+interface IAccountData extends TAccount  {
+  transactions: Transaction[];
+}
 
-const AccountsPage: React.FC<TAccountsPageProps> = async ({ params }) => {
-  const accountData = await getAccountWithTransactions(params.id);
-  if (!accountData) {
+type TAccountPageProps = {
+  params: {
+    id: string;
+  };
+}
+
+export default async function AccountPage({ params }: TAccountPageProps) {
+  const rawAccountData = await getAccountWithTransactions(params.id);
+
+  if (!rawAccountData) {
     notFound();
   }
-  const { ...account } = accountData;
+
+  const accountData: IAccountData = {
+    ...rawAccountData,
+    transactions: rawAccountData.transactions.map((transaction) => ({
+      ...transaction,
+      recurringInterval: transaction.recurringInterval ?? undefined, 
+      nextRecurringDate: transaction.nextRecurringDate ?? "", 
+    })),
+  };
+
+  const { transactions, ...account } = accountData;
 
   return (
     <div className="space-y-8 px-5">
@@ -21,22 +49,24 @@ const AccountsPage: React.FC<TAccountsPageProps> = async ({ params }) => {
             {account.name}
           </h1>
           <p className="text-muted-foreground">
-            {account.type.charAt(0) + account.type.slice(1).toLowerCase()}{" "}
-            Account
+            {account.type.charAt(0) + account.type.slice(1).toLowerCase()} Account
           </p>
         </div>
 
         <div className="text-right pb-2">
           <div className="text-xl sm:text-2xl font-bold">
-            ${Number(account.balance).toFixed(2)}
+            ${account.balance.toFixed(2)}
           </div>
           <p className="text-sm text-muted-foreground">
             {account._count.transactions} Transactions
           </p>
         </div>
       </div>
-      </div>
-  );
-};
 
-export default AccountsPage;
+      {/* Transactions Table */}
+      <Suspense fallback={<BarLoader className="mt-4" width={"100%"} color="#9333ea" />}>
+        <TransactionTable transactions={transactions} />
+      </Suspense>
+    </div>
+  );
+}
