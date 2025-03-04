@@ -1,4 +1,5 @@
 "use client";
+import { bulkDeleteTransactions } from "@/actions/accounts";
 import { categoryColors } from "@/app/data/catagories";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import useFetch from "@/hooks/use-fetch";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import {
@@ -46,7 +48,9 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { BarLoader } from "react-spinners";
+import { toast } from "sonner";
 
 export type Transaction = {
   id: string;
@@ -83,6 +87,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [recurringFilter, setRecurringFilter] = useState("");
+
   const router = useRouter();
   // Memoized filtered and sorted transactions
   const filteredAndSortedTransactions = useMemo(() => {
@@ -141,6 +146,30 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     }));
   };
 
+  const {
+    loading: deleteLoading,
+    fn: deleteFn,
+    data: deleted,
+  } = useFetch(bulkDeleteTransactions);
+
+  const handleBulkDelete = async () => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedIds.length} transactions?`
+      )
+    )
+      return;
+
+    deleteFn(selectedIds);
+  };
+
+  useEffect(() => {
+    if (deleted && !deleteLoading) {
+      toast.error("Transactions deleted successfully");
+      setSelectedIds([]);
+    }
+  }, [deleted, deleteLoading]);
+
   const handleSelect = (id: string) => {
     setSelectedIds((current: string[]) =>
       current.includes(id)
@@ -157,15 +186,6 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
     );
   };
 
-  const handleBulkDelete = async () => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete ${selectedIds.length} transactions?`
-      )
-    )
-      return;
-  };
-
   const handleClearFilters = () => {
     setSearchTerm("");
     setTypeFilter("");
@@ -173,6 +193,9 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
   };
   return (
     <div className="space-y-4">
+      {deleteLoading && (
+        <BarLoader className="mt-4" width={"100%"} color="#9333ea" />
+      )}
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
@@ -407,7 +430,7 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                         <DropdownMenuSeparator />
                         <DropdownMenuLabel
                           className="text-destructive hover:bg-gray-200"
-                          // onClick={() => deleteFn([transaction.id])}
+                          onClick={() => deleteFn([transaction.id])}
                         >
                           Delete
                         </DropdownMenuLabel>

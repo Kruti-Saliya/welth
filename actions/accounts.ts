@@ -1,4 +1,4 @@
-"use server"
+"use server";
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { Account, Transaction } from "@prisma/client";
@@ -36,7 +36,7 @@ const serializeTransactionData = (transaction: Transaction) => {
   };
 };
 
-export async function getAccountWithTransactions(accountId:string) {
+export async function getAccountWithTransactions(accountId: string) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
@@ -66,46 +66,111 @@ export async function getAccountWithTransactions(accountId:string) {
   return {
     ...serializeTransaction(account),
     transactions: account.transactions.map(serializeTransactionData),
-    _count: account._count, 
+    _count: account._count,
   };
 }
 
+export async function bulkDeleteTransactions(transactionIds: string[]) {
+  try {
+    const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized");
 
-export async function updateDefaultAccount(accountId:string) {
-    try {
-      const { userId } = await auth();
-      if (!userId) throw new Error("Unauthorized");
-  
-      const user = await db.user.findUnique({
-        where: { clerkUserId: userId },
-      });
-  
-      if (!user) {
-        throw new Error("User not found");
-      }
-  
-      await db.account.updateMany({
+    const user = await db.user.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    if (!user) throw new Error("User not found");
+
+    // Get transactions to calculate balance changes
+    const transactions = await db.transaction.findMany({
+      where: {
+        id: { in: transactionIds },
+        userId: user.id,
+      },
+    });
+
+    const accountBalanceChanges: Record<string, number> = {};
+
+    transactions.forEach((transaction) => {
+      const amount =
+        transaction.amount instanceof Decimal
+          ? transaction.amount.toNumber()
+          : Number(transaction.amount);
+
+      const change = transaction.type === "EXPENSE" ? amount : -amount;
+      accountBalanceChanges[transaction.accountId] =
+        (accountBalanceChanges[transaction.accountId] || 0) + change;
+    });
+
+    await db.$transaction(async (tx) => {
+      // Delete transactions
+      await tx.transaction.deleteMany({
         where: {
-          userId: user.id,
-          isDefault: true,
-        },
-        data: { isDefault: false },
-      });
-  
-      const account = await db.account.update({
-        where: {
-          id: accountId,
+          id: { in: transactionIds },
           userId: user.id,
         },
-        data: { isDefault: true },
       });
-  
-      revalidatePath("/dashboard");
-      return { success: true, data: serializeTransaction(account) };
-    } catch (error) {
-        return { 
-          success: false, 
-          error: error instanceof Error ? error.message : "An unknown error occurred" 
-        };
+
+      for (const [accountId, balanceChange] of Object.entries(
+        accountBalanceChanges
+      )) {
+        await tx.account.update({
+          where: { id: accountId },
+          data: {
+            balance: {
+              increment: balanceChange,
+            },
+          },
+        });
       }
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath("/account/[id]");
+
+    return { success: true };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "An unknown error occurred";
+    return { success: false, error: errorMessage };
   }
+}
+export async function updateDefaultAccount(accountId: string) {
+  try {
+    const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized");
+
+    const user = await db.user.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    await db.account.updateMany({
+      where: {
+        userId: user.id,
+        isDefault: true,
+      },
+      data: { isDefault: false },
+    });
+
+    const account = await db.account.update({
+      where: {
+        id: accountId,
+        userId: user.id,
+      },
+      data: { isDefault: true },
+    });
+
+    revalidatePath("/dashboard");
+    return { success: true, data: serializeTransaction(account) };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "An unknown error occurred",
+    };
+  }
+}
