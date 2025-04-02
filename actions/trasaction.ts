@@ -24,6 +24,7 @@ interface TransactionData {
   date: string | Date;
   isRecurring?: boolean;
   recurringInterval?: keyof RecurringInterval;
+  category?: string; 
 }
 
 export async function createTransaction(data: TransactionData) {
@@ -61,7 +62,7 @@ export async function createTransaction(data: TransactionData) {
               ? calculateNextRecurringDate(data.date, data.recurringInterval)
               : null,
           accountId: account.id,
-          category: "Uncategorized", 
+          category: data.category || "Uncategorized", 
         },
       });
       await tx.account.update({
