@@ -29,10 +29,19 @@ import { cn } from "@/lib/utils";
 import { transactionSchema } from "@/app/lib/schema";
 import { createTransaction } from "@/actions/trasaction";
 import CreateAccountDrawer from "@/components/CreateAccountDrawer";
+import { ReceiptScanner } from "./recipt-scanner";
 
 interface AddTransactionFormProps {
   accounts: { id: string; name: string; balance: number; isDefault?: boolean }[];
   categories: { id: string; name: string; type: string }[];
+}
+
+export interface ReceiptData {
+  amount: number;
+  date: Date;
+  description: string;
+  category: string;
+  merchantName: string;
 }
 
 export function AddTransactionForm({
@@ -78,6 +87,20 @@ interface FormData {
     category?: string;
 }
 
+const handleScanComplete = (scannedData : ReceiptData) => {
+  if (scannedData) {
+    setValue("amount", scannedData.amount.toString());
+    setValue("date", new Date(scannedData.date));
+    if (scannedData.description) {
+      setValue("description", scannedData.description);
+    }
+    if (scannedData.category) {
+      setValue("category", scannedData.category);
+    }
+    toast.success("Receipt scanned successfully");
+  }
+};
+
 const onSubmit = (data: FormData) => {
     const formData: Omit<FormData, "amount"> & { amount: number } = {
         ...data,
@@ -107,6 +130,9 @@ const onSubmit = (data: FormData) => {
     
       {/* Type */}
       <div className="space-y-2">
+
+      {<ReceiptScanner onScanComplete={handleScanComplete} />}
+
         <label className="text-sm font-medium">Type</label>
         <Select
           onValueChange={(value) => setValue("type", value as "EXPENSE" | "INCOME")}
