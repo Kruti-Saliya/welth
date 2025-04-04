@@ -15,6 +15,15 @@ interface EmailData {
   budgetAmount: string; 
   totalExpenses: string;
   accountName: string;
+  month?: string; // Added the 'month' property
+  stats?: {
+    totalIncome: number;
+    totalExpenses: number;
+    byCategory: {
+      [key: string]: number;
+    };
+  };
+  insights?: string[];
 }
 
 interface EmailTemplateProps {
@@ -25,13 +34,79 @@ interface EmailTemplateProps {
 
 export default function EmailTemplate({
   userName = "",
-  type = "budget-alert",
-  data,
+  type = "monthly-report",
+  data = {},
 }: EmailTemplateProps) {
   if (type === "monthly-report") {
+    return (
+      <Html>
+        <Head />
+        <Preview>Your Monthly Financial Report</Preview>
+        <Body style={styles.body}>
+          <Container style={styles.container}>
+            <Heading style={styles.title}>Monthly Financial Report</Heading>
+
+            <Text style={styles.text}>Hello {userName},</Text>
+            <Text style={styles.text}>
+              Here&rsquo;s your financial summary for {data?.month}:
+            </Text>
+
+            {/* Main Stats */}
+            <Section style={styles.statsContainer}>
+              <div style={styles.stat}>
+                <Text style={styles.text}>Total Income</Text>
+                <Text style={styles.heading}>${data?.stats?.totalIncome ?? 0}</Text>
+              </div>
+              <div style={styles.stat}>
+                <Text style={styles.text}>Total Expenses</Text>
+                <Text style={styles.heading}>${data?.stats?.totalExpenses}</Text>
+              </div>
+              <div style={styles.stat}>
+                <Text style={styles.text}>Net</Text>
+                <Text style={styles.heading}>
+                  ${(data?.stats?.totalIncome ?? 0) - (data?.stats?.totalExpenses ?? 0)}
+                </Text>
+              </div>
+            </Section>
+
+            {/* Category Breakdown */}
+            {data?.stats?.byCategory && (
+              <Section style={styles.section}>
+                <Heading style={styles.heading}>Expenses by Category</Heading>
+                {Object.entries(data?.stats.byCategory).map(
+                  ([category, amount]) => (
+                    <div key={category} style={styles.row}>
+                      <Text style={styles.text}>{category}</Text>
+                      <Text style={styles.text}>${amount}</Text>
+                    </div>
+                  )
+                )}
+              </Section>
+            )}
+
+            {/* AI Insights */}
+            {data?.insights && (
+              <Section style={styles.section}>
+                <Heading style={styles.heading}>Welth Insights</Heading>
+                {data.insights.map((insight, index) => (
+                  <Text key={index} style={styles.text}>
+                    • {insight}
+                  </Text>
+                ))}
+              </Section>
+            )}
+
+            <Text style={styles.footer}>
+              Thank you for using Welth. Keep tracking your finances for better
+              financial health!
+            </Text>
+          </Container>
+        </Body>
+      </Html>
+    );
   }
   if (type === "budget-alert") {
-  }
+  
   return (
     <Html>
       <Head />
@@ -67,6 +142,7 @@ export default function EmailTemplate({
       </Body>
     </Html>
   );
+}
 }
 
 const styles: { [key: string]: CSSProperties } = {
