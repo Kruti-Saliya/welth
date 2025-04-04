@@ -1,4 +1,4 @@
-"use server"
+"use server";
 import aj from "@/lib/inngest/arcjet";
 import { db } from "@/lib/prisma";
 import { request } from "@arcjet/next";
@@ -7,23 +7,25 @@ import { revalidatePath } from "next/cache";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface Transaction {
-    amount: { toNumber: () => number };
-    [key: string]: unknown;
+  amount: { toNumber: () => number };
+  [key: string]: unknown;
 }
 
 interface SerializedTransaction {
-    amount: number;
-    [key: string]: unknown;
+  amount: number;
+  [key: string]: unknown;
 }
 
 if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not defined in the environment variables.");
+  throw new Error(
+    "GEMINI_API_KEY is not defined in the environment variables."
+  );
 }
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const serializeAmount = (obj: Transaction): SerializedTransaction => ({
-    ...obj,
-    amount: obj.amount.toNumber(),
+  ...obj,
+  amount: obj.amount.toNumber(),
 });
 interface TransactionData {
   accountId: string;
@@ -32,7 +34,7 @@ interface TransactionData {
   date: string | Date;
   isRecurring?: boolean;
   recurringInterval?: keyof RecurringInterval;
-  category?: string; 
+  category?: string;
 }
 
 export async function createTransaction(data: TransactionData) {
@@ -44,18 +46,18 @@ export async function createTransaction(data: TransactionData) {
     const decision = await aj.protect(req, {
       userId,
       requested: 1,
-    })
+    });
 
-    if(decision.isDenied()){
-      if(decision.reason.isRateLimit()){
+    if (decision.isDenied()) {
+      if (decision.reason.isRateLimit()) {
         const { remaining, reset } = decision.reason;
         console.error({
           code: "RATE_LIMIT_EXCEEDED",
           details: {
             remaining,
-            resetInSeconds : reset,
-          }
-        })
+            resetInSeconds: reset,
+          },
+        });
         throw new Error("Rate limit exceeded. Please try again later.");
       }
       throw new Error("Request Blocked");
@@ -91,14 +93,14 @@ export async function createTransaction(data: TransactionData) {
               ? calculateNextRecurringDate(data.date, data.recurringInterval)
               : null,
           accountId: account.id,
-          category: data.category || "Uncategorized", 
+          category: data.category || "Uncategorized",
         },
       });
       await tx.account.update({
         where: { id: account.id },
         data: { balance: newBalance },
       });
-        return newTransaction;
+      return newTransaction;
     });
 
     revalidatePath("/dashboard");
@@ -107,16 +109,16 @@ export async function createTransaction(data: TransactionData) {
     return { success: true, data: serializeAmount(transaction) };
   } catch (error) {
     if (error instanceof Error) {
-        throw new Error(error.message || "Failed to create transaction");
+      throw new Error(error.message || "Failed to create transaction");
     }
     throw new Error("Failed to create transaction");
   }
 }
 interface RecurringInterval {
-    DAILY: "DAILY";
-    WEEKLY: "WEEKLY";
-    MONTHLY: "MONTHLY";
-    YEARLY: "YEARLY";
+  DAILY: "DAILY";
+  WEEKLY: "WEEKLY";
+  MONTHLY: "MONTHLY";
+  YEARLY: "YEARLY";
 }
 
 // Scan Receipt
@@ -190,23 +192,120 @@ export async function scanReceipt(file: File): Promise<ReceiptData> {
   }
 }
 
-function calculateNextRecurringDate(startDate: string | Date, interval: keyof RecurringInterval): Date {
-    const date = new Date(startDate);
+function calculateNextRecurringDate(
+  startDate: string | Date,
+  interval: keyof RecurringInterval
+): Date {
+  const date = new Date(startDate);
 
-    switch (interval) {
-        case "DAILY":
-            date.setDate(date.getDate() + 1);
-            break;
-        case "WEEKLY":
-            date.setDate(date.getDate() + 7);
-            break;
-        case "MONTHLY":
-            date.setMonth(date.getMonth() + 1);
-            break;
-        case "YEARLY":
-            date.setFullYear(date.getFullYear() + 1);
-            break;
+  switch (interval) {
+    case "DAILY":
+      date.setDate(date.getDate() + 1);
+      break;
+    case "WEEKLY":
+      date.setDate(date.getDate() + 7);
+      break;
+    case "MONTHLY":
+      date.setMonth(date.getMonth() + 1);
+      break;
+    case "YEARLY":
+      date.setFullYear(date.getFullYear() + 1);
+      break;
+  }
+
+  return date;
+}
+
+export async function getTransaction(id: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const user = await db.user.findUnique({
+    where: { clerkUserId: userId },
+  });
+  if (!user) {
+    throw new Error("User not found");
+  }
+  const transaction = await db.transaction.findUnique({
+    where: { id, userId: user.id },
+  });
+  if (!transaction) {
+    throw new Error("Transaction not found");
+  }
+  return serializeAmount(transaction);
+}
+
+export async function updateTransaction(id:string, data: TransactionData) {
+  try {
+    const { userId } = await auth();
+    if (!userId) throw new Error("Unauthorized");
+
+    const user = await db.user.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    if (!user) throw new Error("User not found");
+
+    // Get original transaction to calculate balance change
+    const originalTransaction = await db.transaction.findUnique({
+      where: {
+        id,
+        userId: user.id,
+      },
+      include: {
+        account: true,
+      },
+    });
+
+    if (!originalTransaction) throw new Error("Transaction not found");
+
+    // Calculate balance changes
+    const oldBalanceChange =
+      originalTransaction.type === "EXPENSE"
+        ? -originalTransaction.amount.toNumber()
+        : originalTransaction.amount.toNumber();
+
+    const newBalanceChange =
+      data.type === "EXPENSE" ? -data.amount : data.amount;
+
+    const netBalanceChange = newBalanceChange - oldBalanceChange;
+
+    // Update transaction and account balance in a transaction
+    const transaction = await db.$transaction(async (tx) => {
+      const updated = await tx.transaction.update({
+        where: {
+          id,
+          userId: user.id,
+        },
+        data: {
+          ...data,
+          nextRecurringDate:
+            data.isRecurring && data.recurringInterval
+              ? calculateNextRecurringDate(data.date, data.recurringInterval)
+              : null,
+        },
+      });
+
+      // Update account balance
+      await tx.account.update({
+        where: { id: data.accountId },
+        data: {
+          balance: {
+            increment: netBalanceChange,
+          },
+        },
+      });
+
+      return updated;
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath(`/account/${data.accountId}`);
+
+    return { success: true, data: serializeAmount(transaction) };
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(error.message);
     }
-
-    return date;
+    throw new Error("An unknown error occurred");
+  }
 }
